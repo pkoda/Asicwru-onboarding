@@ -39,7 +39,10 @@ safety nets, so don't use it here.
 */
  
 alu DUT (
- 
+    .a(tb_input1),
+    .b(tb_input2),
+    .op(tb_opcode),
+    .result(tb_result)
 );
  
 /*
@@ -49,7 +52,15 @@ if it drifts out of sync, the testbench will be checking the wrong opcode agains
 */
  
 localparam ADD = 4'h0;
- 
+localparam SUB = 4'h1;
+localparam AND = 4'h2;
+localparam OR =  4'h3;
+localparam XOR = 4'h4;
+localparam SLL = 4'h5;
+localparam SRL = 4'h6;
+localparam SRA = 4'h7;
+localparam SLT = 4'h8;
+localparam SLTU = 4'h9;
 /*
 This task applies one test case: it drives both operands and the opcode onto the DUT, waits for the
 combinational logic to settle, works out what the result *should* be for that opcode, and reports a
@@ -77,23 +88,23 @@ task automatic check_op(input logic [31:0] a, input logic [31:0] b, input logic 
  
     case (op)
         ADD: expected = a + b;
-        // SUB: expected =
-        // AND: expected =
-        // OR:  expected =
-        // XOR: expected =
-        // NOT: expected =        // NOT only uses one operand which one is up to you, but be
-                                  // consistent with whichever one your always_comb block uses
-        // SLL: expected =
-        // SRL: expected =
-        // SLT: expected =        // result should read back as 1 or 0
-        // EQ:  expected =        // result should read back as 1 or 0
-        default:
+        SUB: expected = a - b;
+        AND: expected = a & b;
+        OR:  expected = a | b;
+        XOR: expected = a ^ b;
+        SLL: expected = a << b[4:0];
+        SRL: expected = a >> b[4:0];
+        SRA: expected = $signed(a) >>> b[4:0];
+        SLT: expected = {31'b0, $signed(a) < $signed(b)};   // result should read back as 1 or 0
+        SLTU: expected = {31'b0, a < b };      // result should read back as 1 or 0
+        default: expected = 0;
     endcase
  
-    if (tb_result === expected)
+    if (tb_result === expected) 
         $display("PASS: %-4s  a=%0d b=%0d  result=%0d", op_name, a, b, tb_result);
     else
         $display("FAIL: %-4s  a=%0d b=%0d  expected=%0d got=%0d", op_name, a, b, expected, tb_result);
+    
 endtask
  
 /*
@@ -103,10 +114,44 @@ think about what could go wrong for each one: SLT and EQ should each be tried on
 comparison is true and once where it's false, SLL/SRL should use a shift amount that isn't zero, and
 SUB should include a case where the result would go negative if your ALU treats it as signed.
 */
+
+logic [31:0] random_a;
+logic [31:0] random_b;
+logic [3:0] random_op;
  
 initial begin
     check_op(32'd10, 32'd20, ADD, "ADD");
- 
+    check_op(32'd10, 32'd20, SUB, "SUB");
+    check_op(32'd10, 32'd20, AND, "AND");
+    check_op(32'd10, 32'd20, OR, "OR");
+    check_op(32'd10, 32'd20, XOR, "XOR");
+
+    check_op(32'd8, 32'd2, SLL, "SLL");
+    check_op(32'd1, 32'd32, SLL, "SLL");
+
+    check_op(32'h80000000, 32'd1, SRL, "SRL");
+    check_op(32'h80000000, 32'd1, SRA, "SRA");
+
+    check_op(-32'sd2, 32'd5, SLT, "SLT");
+    check_op(32'd10, 32'd5, SLT, "SLT");
+    check_op(-32'sd2, 32'd5, SLTU, "SLTU");
+
+
+    check_op(32'd10, 32'd20, 4'hA, "INVALID A");
+    check_op(32'd10, 32'd20, 4'hB, "INVALID B");
+    check_op(32'd10, 32'd20, 4'hC, "INVALID C");
+    check_op(32'd10, 32'd20, 4'hD, "INVALID D");
+    check_op(32'd10, 32'd20, 4'hE, "INVALID E");
+    check_op(32'd10, 32'd20, 4'hF, "INVALID F");
+
+    for (int i = 0; i < 1000; i++) begin
+        random_a = $urandom;
+        random_b = $urandom;
+        random_op = $urandom_range(0, 15);
+
+        check_op(random_a, random_b, random_op, "RANDOM");
+end
+
     $finish;
 end
  
