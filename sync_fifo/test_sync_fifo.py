@@ -119,40 +119,91 @@ async def test_write_then_read_in_order(dut):
 async def test_fill_to_full(dut):
     """TODO: write DEPTH words. `full` must stay 0 until the last one, then be 1.
     Read them all back in order and check `empty` at the end."""
-    assert False, "TODO: implement test_fill_to_full"
+    model = await start(dut)
+    words = [ 0x1111, 0x2222, 0x3333, 0x4444, 0x5555, 0x6666, 0x7777, 0x8888]
+    for i,w in enumerate(words):
+        await cycle(dut, model, wr_en = 1, din = w)
+        if i == DEPTH - 1:
+            assert dut.full.value == 1
+        else:
+            assert dut.full.value == 0
+    for w in words:
+        await cycle(dut, model, rd_en = 1)
+        assert dut.dout.value == w, f"expected {w:#x} next"
+    assert dut.empty.value == 1
+
+
 
 
 @cocotb.test()
 async def test_write_when_full_is_ignored(dut):
     """TODO: fill the FIFO, attempt extra writes, then read everything back.
     The extra values must NOT appear and the original DEPTH words must be intact."""
-    assert False, "TODO: implement test_write_when_full_is_ignored"
-
+    model = await start(dut)
+    words = [ 0x1111, 0x2222, 0x3333, 0x4444, 0x5555, 0x6666, 0x7777, 0x8888]
+    for w in words:
+        await cycle(dut, model, wr_en = 1, din = w)
+    assert dut.full.value == 1
+    words_extra = [0x9999, 0x1010]
+    for w in words_extra:
+        await cycle(dut, model, wr_en = 1, din = w)
+    assert dut.full.value == 1
+    for w in words:
+        await cycle(dut, model, rd_en = 1)
+        assert dut.dout.value == w, f"expected {w:#x} next"
+    assert dut.empty.value == 1
+    
 
 @cocotb.test()
 async def test_read_when_empty_is_ignored(dut):
     """TODO: read from an empty FIFO a couple of times (flags and dout must not change),
     then do a normal write+read and check it still works (pointers didn't get corrupted)."""
-    assert False, "TODO: implement test_read_when_empty_is_ignored"
-
+    model = await start(dut)
+    assert dut.empty.value == 1
+    for i in range(2):
+        await cycle(dut, model, rd_en = 1)
+        assert dut.dout.value == 0
+        assert dut.empty.value == 1
+        assert dut.full.value == 0
+    await cycle(dut, model, wr_en = 1, din = 0x1111)
+    await cycle(dut, model, rd_en = 1)
+    assert dut.dout.value == 0x1111
+    assert dut.empty.value == 1
+    
 
 @cocotb.test()
 async def test_simultaneous_read_write(dut):
     """TODO: pre-load a few words, then assert wr_en and rd_en together for many cycles.
     The model already handles this case - just call cycle() and let check() compare."""
-    assert False, "TODO: implement test_simultaneous_read_write"
-
+    model = await start(dut)
+    words = [0x1111, 0x2222, 0x3333]
+    for w in words:
+        await cycle(dut, model, wr_en=1, din=w)
+    for i in range(10):
+        await cycle(dut, model, wr_en=1, rd_en = 1, din=i)
+     
 
 @cocotb.test()
 async def test_pointer_wraparound(dut):
     """TODO: push/pop enough words (several times DEPTH) that the pointers wrap around
     past the end of memory repeatedly. Wrap bugs hide until then."""
-    assert False, "TODO: implement test_pointer_wraparound"
-
+    model = await start(dut)
+    words = [ 0x1111, 0x2222, 0x3333, 0x4444, 0x5555, 0x6666, 0x7777, 0x8888]
+    for i in range(5):
+        for w in words:
+            await cycle(dut, model, wr_en = 1, din = w)
+        assert dut.full.value == 1
+        for w in words:
+            await cycle(dut, model, rd_en = 1)
+            assert dut.dout.value == w, f"expected {w:#x} next"
+        assert dut.empty.value == 1
 
 @cocotb.test()
 async def test_random_traffic(dut):
     """TODO: 1000+ cycles of random wr_en / rd_en / din via cycle(). The model + check()
     do the verifying. Use random.Random(seed) with a fixed seed so a failure is reproducible,
     and print the seed in your assertion messages if you make it configurable."""
-    assert False, "TODO: implement test_random_traffic"
+    model = await start(dut)
+    r = random.Random(30)
+    for i in range(1000):
+        await cycle(dut, model, wr_en = r.randint(0,1), rd_en = r.randint(0,1), din=r.randint(0,MASK))

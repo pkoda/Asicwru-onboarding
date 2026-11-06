@@ -28,17 +28,17 @@ module sync_fifo #(
     logic [AW:0] wptr, rptr;
 
     // TODO: drive `empty` from wptr and rptr.
-    assign empty = 1'b1;
+    assign empty = (wptr == rptr);
 
     // TODO: drive `full` from wptr and rptr (see the comment above).
-    assign full = 1'b0;
+    assign full = (wptr[AW] != rptr[AW]) && (wptr[AW - 1:0] == rptr[AW -1:0]);
 
     // A write happens only if requested AND there is room; a read only if requested AND
     // there is data. Requests made when full/empty are silently ignored.
     // TODO: define do_write and do_read from wr_en, rd_en, full, empty.
     logic do_write, do_read;
-    assign do_write = 1'b0;
-    assign do_read  = 1'b0;
+    assign do_write = wr_en && !full;
+    assign do_read  = rd_en && !empty;
 
     // Write side
     always_ff @(posedge clk) begin
@@ -46,6 +46,8 @@ module sync_fifo #(
             wptr <= '0;
         end else if (do_write) begin
             // TODO: store din in mem at the slot wptr points to, then advance wptr
+            mem[wptr[AW-1:0]]<= din;
+            wptr <= wptr + 1'b1;
         end
     end
 
@@ -57,6 +59,8 @@ module sync_fifo #(
             dout <= '0;
         end else if (do_read) begin
             // TODO: load dout from mem at the slot rptr points to, then advance rptr
+            dout <= mem[rptr[AW-1:0]];
+            rptr <= rptr + 1'b1;
         end
     end
 
