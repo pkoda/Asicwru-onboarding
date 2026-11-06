@@ -91,7 +91,13 @@ module uart_tx #(
                 // Stay here for CLKS_PER_BIT cycles (count clk_count up to LAST_COUNT, then
                 // reset it to 0). On the last cycle: tx_reg <= data_reg[0]; state <= DATA.
                 START: begin
-
+                    if (clk_count != LAST_COUNT) begin
+                        clk_count <= clk_count + 1;
+                    end else begin
+                        clk_count <= 1'b0;
+                        tx_reg   <= data_reg[0];
+                        state <= DATA;
+                    end
                 end
 
                 // --- TODO: DATA ------------------------------------------
@@ -99,13 +105,32 @@ module uart_tx #(
                 //   - if bit_index is 7: bit_index <= 0; tx_reg <= 1; state <= STOP
                 //   - otherwise:         bit_index++; tx_reg <= data_reg[bit_index + 1]
                 DATA: begin
+                    if (clk_count != LAST_COUNT) begin
+                        clk_count <= clk_count + 1'b1;
+                    end else begin
+                        clk_count <= 1'b0;
+                        if (bit_index == 7) begin
+                            bit_index <= 3'd0;
+                            tx_reg <= 1'b1;
+                            state <= STOP;
+                        end else begin
+                            bit_index <= bit_index + 1'b1; 
+                            tx_reg <= data_reg[bit_index + 1];
+                        end
+                    end
 
                 end
 
                 // --- TODO: STOP ------------------------------------------
                 // Hold the line high for CLKS_PER_BIT cycles, then return to IDLE.
                 STOP: begin
-
+                    if (clk_count != LAST_COUNT) begin
+                        clk_count <= clk_count + 1;
+                    end else begin
+                        clk_count <= 1'b0;
+                        tx_reg   <= 1'b1;
+                        state <= IDLE;
+                    end
                 end
 
                 default: state <= IDLE;

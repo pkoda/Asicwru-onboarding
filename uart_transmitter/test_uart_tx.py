@@ -32,7 +32,7 @@ async def reset_dut(dut):
     await FallingEdge(dut.clk)
 
 
-async def send_and_check_byte(dut, byte_val):
+async def send_and_check_byte(dut, byte_val, extra_start_at = None):
     """TODO: implement this.
 
     1. Set tx_data = byte_val and pulse tx_start high for exactly ONE cycle
@@ -50,7 +50,38 @@ async def send_and_check_byte(dut, byte_val):
 
     Write assertion messages that say WHICH bit and WHICH cycle failed.
     """
-    raise NotImplementedError
+    dut.tx_data.value = byte_val
+    dut.tx_start.value = 1
+    await FallingEdge(dut.clk)
+    dut.tx_start.value = 0
+    start = False
+    for i in range(3):
+        await FallingEdge(dut.clk)
+        if dut.tx.value == 0:
+            start = True
+            break
+    assert start, "tx did not go low"
+    expected = [0] + [(byte_val >> i) & 1 for i in range(8)] + [1]
+    for bit_index, bit_value in enumerate(expected):
+        for cycle in range(CLKS_PER_BIT):
+            assert dut.tx.value == bit_value, f"Wrong value at bit {bit_index}, cycle{cycle}"
+            assert dut.tx_busy.value == 1, f"tx_busy went low at bit {bit_index}, cycle {cycle}"
+            total_cycle = bit_index * CLKS_PER_BIT + cycle
+            if total_cycle == extra_start_at:
+                dut.tx_data.value = byte_val ^ 0xFF
+                dut.tx_start.value = 1
+                await FallingEdge(dut.clk)
+                dut.tx_start.value = 0
+            else:
+                await FallingEdge(dut.clk)
+    for i in range(2):
+        if dut.tx_busy.value == 0:
+            break
+        await FallingEdge(dut.clk)
+    assert dut.tx_busy.value == 0, "tx_busy did not return to 0"
+    assert dut.tx.value == 1, "tx did not return to high"
+
+
 
 
 @cocotb.test()
@@ -101,3 +132,45 @@ async def test_random_bytes(dut):
 #
 #   test_reset_mid_frame     - reset the DUT halfway through a frame; tx must return to 1 and
 #                              tx_busy to 0, and a fresh frame afterwards must still be correct.
+
+@cocotb.test()
+async def test_back_to_back(dut):
+    cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
+    await reset_dut(dut)
+    for val in [0xA1, 0xA2, 0xA3, 0x3C, 0xF0]:
+        await send_and_check_byte(dut, val)
+
+@cocotb.test()
+async def test_start_ignored_while_busy(dut):
+    cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
+    await reset_dut(dut)
+    await send_and_check_byte(dut, 0xA5, extra_start_at=20)
+    for i in range(CLKS_PER_BIT * 2):
+        assert dut.tx.value == 1, "unexpected second frame"
+        assert dut.tx_busy.value == 0, "unexpected second frame"
+        await FallingEdge(dut.clk)
+
+        
+@cocotb.test()
+async def test_reset_mid_frame(dut):
+    cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
+    await reset_dut(dut)
+    dut.tx_data.value = 0xA5
+    dut.tx_start.value = 1
+    await FallingEdge(dut.clk)
+    dut.tx_start.value = 0
+    await FallingEdge(dut.clk)
+    assert dut.tx.value == 0
+    assert dut.tx_busy.value == 1
+    for i in range(CLKS_PER_BIT * 3):
+        await FallingEdge(dut.clk)
+    dut.rst_n.value = 0
+    await FallingEdge(dut.clk)
+    assert dut.tx.value == 1, "tx did not go to 1 after reset"
+    assert dut.tx_busy.value == 0, "tx_busy did not clear after reset"
+
+    dut.rst_n.value = 1
+    await FallingEdge(dut.clk)
+    await send_and_check_byte(dut, 0xA4)
+
+
